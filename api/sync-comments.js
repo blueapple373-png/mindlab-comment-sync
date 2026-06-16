@@ -4,9 +4,6 @@ export default async function handler(req, res) {
   const GAS_WEBAPP_URL = process.env.GAS_WEBAPP_URL;
 
   try {
-    // ============================================
-    // 1. 自分の投稿一覧を取得
-    // ============================================
     const postsRes = await fetch(
       `https://graph.threads.net/v1.0/me/threads?fields=id,text,timestamp&access_token=${THREADS_TOKEN}`
     );
@@ -18,10 +15,6 @@ export default async function handler(req, res) {
 
     const allComments = [];
 
-    // ============================================
-    // 2. 各投稿への返信（コメント）を取得
-    //    repliesフィールドで返信数も取得
-    // ============================================
     for (const post of postsData.data) {
       const repliesRes = await fetch(
         `https://graph.threads.net/v1.0/${post.id}/replies?fields=id,text,timestamp,username,replies&access_token=${THREADS_TOKEN}`
@@ -48,13 +41,9 @@ export default async function handler(req, res) {
       return res.status(200).json({ status: 'ok', message: 'No comments found', added: 0 });
     }
 
-    // ============================================
-    // 3. Claude APIで分類
-    // ============================================
     const systemPrompt = `あなたはMINAMI MINDLABのThreadsコメント分析専用AIです。
 
 以下の各コメントについて、以下の項目をJSON配列で出力してください。
-日付、投稿タイトル、投稿カテゴリ、投稿タイプ、コメント、読者タイプ、分類、感情キーワード、優先度、返信要否、ネタ候補、保存価値、返信数
 
 ■各項目の判定基準
 
@@ -80,44 +69,52 @@ export default async function handler(req, res) {
 - JSON配列のみ出力。説明文・マークダウン・バッククォート不要
 - フィールド名: date, title, category, type, comment, audienceType, classification, emotionKeywords, priority, replyNeeded, ideaCandidate, saveValue, replyCount`;
 
-    const userPrompt = `以下のコメント一覧を分析してください。\n\n` +
-      allComments.map((c, i) =>
-        `${i + 1}. 元投稿: ${c.postText}\nコメント: ${c.replyText}\n日時: ${c.replyTimestamp}\n返信数: ${c.replyCount}`
-      ).join('\n\n');
+    // 10件ずつに分割して処理
+    const chunkSize = 10;
+    const allClassified = [];
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 8000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
-      })
-    });
+    for (let i = 0; i < allComments.length; i += chunkSize) {
+      const chunk = allComments.slice(i, i + chunkSize);
 
-    const claudeData = await claudeRes.json();
-    const rawText = claudeData.content[0].text;
-    const clean = rawText.replace(/```json|```/g, '').trim();
-    const classified = JSON.parse(clean);
+      const userPrompt = `以下のコメント一覧を分析してください。\n\n` +
+        chunk.map((c, idx) =>
+          `${idx + 1}. 元投稿: ${c.postText}\nコメント: ${c.replyText}\n日時: ${c.replyTimestamp}\n返信数: ${c.replyCount}`
+        ).join('\n\n');
 
-    // ============================================
-    // 4. GAS Web Appへ送信（スプシに書き込み）
-    // ============================================
+      const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 4000,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }]
+        })
+      });
+
+      const claudeData = await claudeRes.json();
+      const rawText = claudeData.content[0].text;
+      const clean = rawText.replace(/```json|```/g, '').trim();
+      const classified = JSON.parse(clean);
+      allClassified.push(...classified);
+    }
+
+    // GAS Web Appへ送信
     const gasRes = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(classified)
+      body: JSON.stringify(allClassified)
     });
     const gasData = await gasRes.json();
 
     return res.status(200).json({
       status: 'ok',
       commentsFound: allComments.length,
+      classified: allClassified.length,
       gasResult: gasData
     });
 
