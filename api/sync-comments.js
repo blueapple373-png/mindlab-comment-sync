@@ -20,22 +20,25 @@ export default async function handler(req, res) {
 
     // ============================================
     // 2. 各投稿への返信（コメント）を取得
+    //    repliesフィールドで返信数も取得
     // ============================================
     for (const post of postsData.data) {
       const repliesRes = await fetch(
-        `https://graph.threads.net/v1.0/${post.id}/replies?fields=id,text,timestamp,username&access_token=${THREADS_TOKEN}`
+        `https://graph.threads.net/v1.0/${post.id}/replies?fields=id,text,timestamp,username,replies&access_token=${THREADS_TOKEN}`
       );
       const repliesData = await repliesRes.json();
 
       if (repliesData.data) {
         repliesData.data.forEach(reply => {
+          const replyCount = reply.replies?.data?.length ?? 0;
           allComments.push({
             postId: post.id,
             postText: post.text,
             postTimestamp: post.timestamp,
             replyId: reply.id,
             replyText: reply.text,
-            replyTimestamp: reply.timestamp
+            replyTimestamp: reply.timestamp,
+            replyCount: replyCount
           });
         });
       }
@@ -51,12 +54,12 @@ export default async function handler(req, res) {
     const systemPrompt = `あなたはMINAMI MINDLABのThreadsコメント分析専用AIです。
 
 以下の各コメントについて、以下の項目をJSON配列で出力してください。
-日付、投稿タイトル、投稿カテゴリ、投稿タイプ、コメント、読者タイプ、分類、感情キーワード、優先度、返信要否、ネタ候補、保存価値
+日付、投稿タイトル、投稿カテゴリ、投稿タイプ、コメント、読者タイプ、分類、感情キーワード、優先度、返信要否、ネタ候補、保存価値、返信数
 
 ■各項目の判定基準
 
 【優先度】
-高：深い体験談・長文の自己開示・投稿の核心に触れている・新しい気付きが含まれる・今後の投稿ネタになりそう
+高：深い体験談・長文の自己開示・投稿の核心に触れている・新しい気付きが含まれる・今後の投稿ネタになりそう・返信数が多い
 中：体験談はあるが一般的・共感＋短い意見・読者理解には役立つ
 低：単純な共感・一般的なアドバイス・応援コメント
 不要：営業・勧誘・スパム・内容がほぼないもの
@@ -67,7 +70,7 @@ export default async function handler(req, res) {
 不要：営業・勧誘・スパム
 
 【保存価値】
-高：投稿ネタになる・読者の本音が見える・頻出テーマ・世界観に関わる発言・営業研究に使える
+高：投稿ネタになる・読者の本音が見える・頻出テーマ・世界観に関わる発言・営業研究に使える・返信数が多い
 中：参考にはなる・典型例として残したい
 低：既出内容・単純共感・分析価値が低い・応援のみ
 
@@ -75,11 +78,11 @@ export default async function handler(req, res) {
 - 営業・勧誘コメントで研究価値が高い場合はネタ候補に「営業研究」と記載
 - 不明な項目は「不明」
 - JSON配列のみ出力。説明文・マークダウン・バッククォート不要
-- フィールド名: date, title, category, type, comment, audienceType, classification, emotionKeywords, priority, replyNeeded, ideaCandidate, saveValue`;
+- フィールド名: date, title, category, type, comment, audienceType, classification, emotionKeywords, priority, replyNeeded, ideaCandidate, saveValue, replyCount`;
 
     const userPrompt = `以下のコメント一覧を分析してください。\n\n` +
       allComments.map((c, i) =>
-        `${i + 1}. 元投稿: ${c.postText}\nコメント: ${c.replyText}\n日時: ${c.replyTimestamp}`
+        `${i + 1}. 元投稿: ${c.postText}\nコメント: ${c.replyText}\n日時: ${c.replyTimestamp}\n返信数: ${c.replyCount}`
       ).join('\n\n');
 
     const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
