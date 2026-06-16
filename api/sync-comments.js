@@ -9,7 +9,7 @@ export default async function handler(req, res) {
     const existingIds = new Set(gasGetData.ids || []);
 
     const postsRes = await fetch(
-      `https://graph.threads.net/v1.0/me/threads?fields=id,text,timestamp&access_token=${THREADS_TOKEN}`
+      `https://graph.threads.net/v1.0/me/threads?fields=id,text,timestamp&limit=20&access_token=${THREADS_TOKEN}`
     );
     const postsData = await postsRes.json();
 
@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
       if (repliesData.data) {
         repliesData.data.forEach(reply => {
-          //if (existingIds.has(reply.id)) return;
+          if (existingIds.has(reply.id)) return;
           const replyCount = reply.replies?.data?.length ?? 0;
           allComments.push({
             postId: post.id,
