@@ -27,7 +27,7 @@ export default async function handler(req, res) {
 
       if (repliesData.data) {
         repliesData.data.forEach(reply => {
-          if (existingIds.has(reply.id)) return;
+          //if (existingIds.has(reply.id)) return;
           const replyCount = reply.replies?.data?.length ?? 0;
           allComments.push({
             postId: post.id,
