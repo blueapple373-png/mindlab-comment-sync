@@ -4,12 +4,10 @@ export default async function handler(req, res) {
   const GAS_WEBAPP_URL = process.env.GAS_WEBAPP_URL;
 
   try {
-    // ① 既存コメントID一覧をGASから取得（重複防止）
     const gasGetRes = await fetch(GAS_WEBAPP_URL, { method: 'GET' });
     const gasGetData = await gasGetRes.json();
     const existingIds = new Set(gasGetData.ids || []);
 
-    // ② Threadsから投稿一覧を取得
     const postsRes = await fetch(
       `https://graph.threads.net/v1.0/me/threads?fields=id,text,timestamp&access_token=${THREADS_TOKEN}`
     );
@@ -29,9 +27,7 @@ export default async function handler(req, res) {
 
       if (repliesData.data) {
         repliesData.data.forEach(reply => {
-          // ③ 既存IDはスキップ
           if (existingIds.has(reply.id)) return;
-
           const replyCount = reply.replies?.data?.length ?? 0;
           allComments.push({
             postId: post.id,
@@ -85,16 +81,16 @@ export default async function handler(req, res) {
 
 【感情キーワード】
 以下のリストから最も当てはまるものを1つ選んで記載：
-孤独・生きづらさ・仕事・HSP・ADHD・回復・境界線・感情・その他・心理・感情・励まし
+孤独・生きづらさ・仕事・HSP・ADHD・回復・境界線・感情・その他・心理・励まし
 リストにない場合は「その他」を選択
 
 ■出力ルール
 - 営業・勧誘コメントで研究価値が高い場合はネタ候補に「営業研究」と記載
 - 不明な項目は「不明」
 - JSON配列のみ出力。説明文・マークダウン・バッククォート不要
-- フィールド名（必須・順番通り）: replyId, date, title, category, type, comment, audienceType, classification, emotionKeywords, priority, replyNeeded, ideaCandidate, saveValue, replyCount
+- フィールド名（必須）: replyId, date, title, category, type, comment, audienceType, classification, emotionKeywords, priority, replyNeeded, ideaCandidate, saveValue, replyCount
 - replyId: 入力データのreplyIdをそのまま出力
-- title: 元投稿の最初の20文字（それ以上は省略）
+- title: 元投稿の最初の20文字
 - date: replyTimestampをYYYY/MM/DD形式に変換
 - comment: replyTextをそのまま出力`;
 
@@ -131,7 +127,6 @@ export default async function handler(req, res) {
       allClassified.push(...classified);
     }
 
-    // GAS Web Appへ送信
     const gasRes = await fetch(GAS_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
